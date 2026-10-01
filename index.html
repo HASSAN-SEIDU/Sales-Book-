@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Daily Sales Book</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f2f5f9;--card:#fff;--ink:#14213d;--mut:#5d6b85;--line:#d9e0ea;--hi:#ffd23f;--red:#d64045;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1424;--card:#171f35;--ink:#eef2fa;--mut:#9aa8c4;--line:#2a3554;--red:#ff6b6f}}
+:root[data-theme="dark"]{--bg:#0e1424;--card:#171f35;--ink:#eef2fa;--mut:#9aa8c4;--line:#2a3554;--red:#ff6b6f}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Bricolage Grotesque",system-ui,sans-serif}
+.wrap{max-width:900px;margin:auto;padding:18px 16px 40px}
+h1{margin:0 0 4px;font-size:1.7rem;font-weight:800;letter-spacing:-.02em}
+h1 span{background:linear-gradient(transparent 55%,var(--hi) 55%);padding:0 4px}
+.mut{color:var(--mut);font-size:.88rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin:14px 0}
+.form{display:grid;grid-template-columns:150px 1fr 120px 90px auto;gap:8px;align-items:end}
+@media(max-width:720px){.form{grid-template-columns:1fr 1fr}.form .wide{grid-column:1/-1}}
+label{display:block;font-size:.85rem;color:var(--mut);margin-bottom:2px}
+input{font:inherit;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:100%}
+button{font:inherit;cursor:pointer}
+.b{font-weight:600;padding:10px 16px;border:0;border-radius:8px;background:var(--hi);color:#14213d}
+.g{padding:4px 9px;border:1px solid var(--line);border-radius:8px;background:none;color:var(--red)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--hi);outline-offset:1px}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+.sum{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+.sum div{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--hi);border-radius:10px;padding:10px 14px;font-size:.88rem;color:var(--mut)}
+.sum b{display:block;font-size:1.3rem;color:var(--ink)}
+@media(max-width:720px){table{font-size:.8rem}.card{padding:10px}th,td{padding:6px 3px}.sum b{font-size:1.05rem}}
+th,td{padding:8px;text-align:left;border-bottom:1px solid var(--line)}
+th{font-size:.85rem;color:var(--mut);font-weight:600}
+td.n,th.n{text-align:right}
+tr.tot td{font-weight:800;background:var(--bg);border-top:2px solid var(--ink);border-bottom:0}
+.day{font-weight:800;font-size:1.1rem;margin:0 0 6px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+@media print{.noprint{display:none!important}body{background:#fff;color:#000}.card{border:0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1><span>Daily Sales Book</span></h1>
+<div class="mut">Record each sale. Every day gets its own total.</div>
+
+<div class="card noprint">
+ <div class="form">
+  <div><label for="d">Date</label><input id="d" type="date"></div>
+  <div class="wide"><label for="n">Name of item</label><input id="n" maxlength="60" list="items" placeholder="e.g. Exercise book" autocomplete="off" oninput="fill()"></div>
+  <div><label for="p">Price (GH₵.pesewas)</label><input id="p" type="number" max="1000000" min="0" step="0.01" placeholder="0.00"></div>
+  <div><label for="q">Quantity</label><input id="q" type="number" max="100000" min="1" step="1" value="1"></div>
+  <div class="wide"><button class="b" onclick="addRow()">Add to book</button></div>
+ </div>
+ <datalist id="items"></datalist>
+ <div id="err" class="mut" style="color:var(--red);margin-top:6px"></div>
+</div>
+
+<div class="sum"><div>Today's sales<b id="st">GH₵ 0.00</b></div><div>Overall sales (all days)<b id="sa">GH₵ 0.00</b></div></div>
+<div class="bar noprint"><span class="mut">Newest day first</span><span><button class="g" style="color:var(--ink)" onclick="backup()">Download backup</button> <button class="g" style="color:var(--ink)" onclick="printBook()">Print book</button></span></div>
+<div id="out"></div>
+<div id="more" class="noprint" style="margin-bottom:14px"></div>
+<p class="mut noprint" id="sync">Saved in this browser on this device.</p>
+</div>
+<script>
+const cu=async n=>{try{return window.claude?await window.claude.use(n):null}catch(e){return null}};
+const $=id=>document.getElementById(id);
+const money=c=>"GH₵ "+(c/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+const MAXN=60,MAXP=1000000,MAXQ=100000,MAXDAY=1500;
+const today=()=>{const t=new Date();return t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0")};
+const okDate=d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&d>="2000-01-01"&&d<="2100-12-31"&&!isNaN(new Date(d+"T00:00:00"));
+const cents=r=>Math.round(r.price*100)*r.qty;
+function clean(r){
+ if(!r||typeof r!=="object")return null;
+ const name=String(r.name==null?"":r.name).replace(/\s+/g," ").trim().slice(0,MAXN),price=+r.price,qty=Math.floor(+r.qty);
+ if(!name||!okDate(r.date)||!(price>=0&&price<=MAXP)||!(qty>0&&qty<=MAXQ))return null;
+ let id=String(r.id==null?"":r.id);if(!/^[a-z0-9]{1,24}$/i.test(id))id=uid();
+ return{id,date:r.date,name,price:Math.round(price*100)/100,qty}}
+const group=list=>{const g={};list.map(clean).filter(Boolean).forEach(r=>(g[r.date]=g[r.date]||[]).push(r));return g};
+let days={};
+try{const a=localStorage.getItem("salesbook2");if(a){const o=JSON.parse(a);days=group(Object.values(o.days||{}).flat())}
+ else{const b=localStorage.getItem("salesbook");if(b)days=group(JSON.parse(b))}}catch(e){days={}}
+function saveLocal(){try{localStorage.setItem("salesbook2",JSON.stringify({days}))}catch(e){}}
+function setStatus(t){const e=$("sync");if(e)e.textContent=t}
+let cloud=null,queue=Promise.resolve();const dirty=new Set();
+function touch(d){dirty.add(d);saveLocal();return flush()}
+function flush(){
+ if(!cloud)return queue;
+ queue=queue.then(async()=>{
+  const ds=[...dirty];dirty.clear();
+  try{for(const d of ds){const ref=cloud.doc("d-"+d);
+    if((days[d]||[]).length)await ref.set({rows:days[d]});else{try{await ref.delete()}catch(e){}}}
+   setStatus("Saved online ✓")}
+  catch(e){ds.forEach(d=>dirty.add(d));setStatus("Online save failed. Entries are kept on this device and will retry on your next entry.")}});
+ return queue}
+(async function initCloud(){
+ try{
+  const db=await cu("db"),user=await cu("user");
+  if(!db||!user){setStatus("Saved in this browser on this device. Use the same device each day and download a backup now and then.");return}
+  const col=db.collection("data/users/"+await user.id());
+  const snap=await col.limit(1000).get();
+  const remote={};let legacy=null;
+  snap.docs.forEach(x=>{const d=x.data()||{},rows=Array.isArray(d.rows)?d.rows:[];
+   if(x.id.indexOf("d-")==0&&okDate(x.id.slice(2)))remote[x.id.slice(2)]=rows.map(clean).filter(Boolean);
+   else if(x.id==="salesbook")legacy=rows});
+  for(const d in remote)days[d]=remote[d];
+  if(legacy){const g=group(legacy);for(const d in g)if(!remote[d]){days[d]=g[d];dirty.add(d)}}
+  for(const d in days){if(!days[d].length)delete days[d];else if(!(d in remote))dirty.add(d)}
+  saveLocal();cloud=col;render();setStatus("Loaded from your online book ✓");
+  await flush();
+  if(legacy&&!dirty.size){try{await col.doc("salesbook").delete()}catch(e){}}
+ }catch(e){setStatus("Saved on this device only.")}
+})();
+let shown=14;
+function recent(){return Object.keys(days).sort().reverse().slice(0,30).flatMap(d=>days[d])}
+function fill(){const v=$("n").value.trim().toLowerCase();if(!v||$("p").value)return;const r=recent().find(x=>x.name.toLowerCase()==v);if(r)$("p").value=r.price}
+function addRow(){
+ const date=$("d").value,r=clean({id:uid(),date,name:$("n").value,price:$("p").value,qty:$("q").value});
+ if(!r){$("err").textContent="Check the entry: date, a name (max "+MAXN+" letters), a price from 0 to "+MAXP.toLocaleString()+", and a whole-number quantity.";return}
+ if((days[date]||[]).length>=MAXDAY){$("err").textContent="This day already has "+MAXDAY+" entries. Use a new date.";return}
+ $("err").textContent="";(days[date]=days[date]||[]).push(r);touch(date);
+ $("n").value="";$("p").value="";$("q").value=1;$("n").focus();render()}
+function del(id,d){if(!confirm("Delete this entry?"))return;days[d]=(days[d]||[]).filter(r=>r.id!==id);if(!days[d].length)delete days[d];touch(d);render()}
+function fmt(d){return new Date(d+"T00:00:00").toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
+function render(){
+ const all=Object.keys(days).sort().reverse();let tot=0,td=0;
+ all.forEach(d=>days[d].forEach(r=>{const c=cents(r);tot+=c;if(d==today())td+=c}));
+ $("st").textContent=money(td);$("sa").textContent=money(tot);
+ $("items").innerHTML=[...new Set(recent().map(r=>r.name))].slice(0,200).map(n=>`<option value="${esc(n)}">`).join("");
+ if(!all.length){$("out").innerHTML='<div class="card mut">No sales yet. Fill in the form above and tap Add to book.</div>';$("more").innerHTML="";return}
+ $("out").innerHTML=all.slice(0,shown).map(d=>{
+  const list=days[d],sum=list.reduce((a,r)=>a+cents(r),0);
+  return `<div class="card"><p class="day">${fmt(d)}</p><div class="scroll"><table>
+  <thead><tr><th>Date</th><th>Name of item</th><th class="n">Price</th><th class="n">Quantity</th><th class="n">Total</th><th class="noprint"></th></tr></thead><tbody>
+  ${list.map(r=>`<tr><td>${d.split("-").reverse().map((x,i)=>i==2?x.slice(2):x).join("/")}</td><td>${esc(r.name)}</td><td class="n">${money(Math.round(r.price*100))}</td><td class="n">${r.qty}</td><td class="n">${money(cents(r))}</td><td class="noprint"><button class="g" data-id="${esc(r.id)}" data-d="${d}" aria-label="Delete entry">✕</button></td></tr>`).join("")}
+  <tr class="tot"><td colspan="4">Total for the day (${list.length} ${list.length==1?"entry":"entries"})</td><td class="n">${money(sum)}</td><td class="noprint"></td></tr>
+  </tbody></table></div></div>`}).join("");
+ $("more").innerHTML=all.length>shown?`<button class="g" style="color:var(--ink)" id="showmore">Show older days (${all.length-shown} more)</button>`:""}
+$("out").addEventListener("click",e=>{const b=e.target.closest("button[data-id]");if(b)del(b.dataset.id,b.dataset.d)});
+$("more").addEventListener("click",e=>{if(e.target.id=="showmore"){shown+=14;render()}});
+async function printBook(){
+ const all=Object.keys(days).sort().reverse();
+ if(!all.length){alert("Nothing to print yet.");return}
+ const dl=await cu("downloads");
+ if(!dl){window.print();return}
+ let tot=0;
+ const body=all.map(d=>{const list=days[d],sum=list.reduce((a,r)=>a+cents(r),0);tot+=sum;
+  return `<h3>${esc(fmt(d))}</h3><table><tr><th>Date</th><th>Name of item</th><th>Price</th><th>Qty</th><th>Total</th></tr>`+
+  list.map(r=>`<tr><td>${d.split("-").reverse().join("/")}</td><td>${esc(r.name)}</td><td>${money(Math.round(r.price*100))}</td><td>${r.qty}</td><td>${money(cents(r))}</td></tr>`).join("")+
+  `<tr class="t"><td colspan="4">Total for the day</td><td>${money(sum)}</td></tr></table>`}).join("");
+ const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Sales Book</title><style>body{font:14px Arial,sans-serif;margin:24px;color:#000}h1{margin:0 0 4px}h3{margin:20px 0 6px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:5px 8px;text-align:left}td:nth-child(n+3),th:nth-child(n+3){text-align:right}.t td{font-weight:bold;background:#eee}</style></head><body><h1>Daily Sales Book</h1><p>Printed ${esc(new Date().toLocaleDateString())}. Overall sales: <b>${money(tot)}</b></p>${body}<script>window.onload=function(){window.print()}<\/script></body></html>`;
+ try{await dl.save({filename:"sales-book-"+today()+".html",data:html});alert("Saved. Open the downloaded file; it will open the print screen, where you can print or choose Save as PDF.")}catch(e){}}
+async function backup(){
+ const dl=await cu("downloads")||{save:async q=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([q.data],{type:"text/csv"}));a.download=q.filename;document.body.appendChild(a);a.click();a.remove()}};
+ const cell=v=>{v=String(v);if(/^[=+\-@\t\r]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"'};
+ const lines=["Date,Name of item,Price (GHS),Quantity,Total (GHS)"];
+ Object.keys(days).sort().forEach(d=>days[d].forEach(r=>lines.push([r.date,r.name,r.price.toFixed(2),r.qty,(cents(r)/100).toFixed(2)].map(cell).join(","))));
+ if(lines.length<2){alert("Nothing to back up yet.");return}
+ try{await dl.save({filename:"sales-book-"+today()+".csv",data:lines.join("\n")})}catch(e){}}
+$("d").value=today();
+render();
+</script>
+</body>
+</html>
